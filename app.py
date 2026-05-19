@@ -25,13 +25,20 @@ st.write("---")
 # ==========================================
 groq_key = ""
 
-# Önce Streamlit Cloud Secrets kontrol edilir (Hata vermemesi için try-except içinde)
-try:
-    if "GROQ_API_KEY" in st.secrets:
-        groq_key = st.secrets["GROQ_API_KEY"]
-except Exception:
-    # Eğer lokaldeysek st.secrets hata verir, bu durumda buraya düşer ve .env dosyasını okur
-    groq_key = os.getenv("GROQ_API_KEY", "")
+# Önce sistemde .env veya yerel çevre değişkeni var mı diye bakar (Lokal kontrol)
+local_key = os.getenv("GROQ_API_KEY", "")
+
+if local_key:
+    groq_key = local_key
+else:
+    # Eğer lokalde key yoksa, buluttadır diyerek direkt Secrets'tan çekmeye çalışır
+    try:
+        groq_key = st.secrets.get("GROQ_API_KEY", "")
+    except Exception:
+        groq_key = ""
+
+# Varsayılan model seçimi
+MODEL_NAME = "llama-3.3-70b-versatile"
 
 # Varsayılan model seçimi
 MODEL_NAME = "llama-3.3-70b-versatile"
