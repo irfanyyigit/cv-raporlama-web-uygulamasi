@@ -18,7 +18,7 @@ st.set_page_config(
 )
 
 # 🌐 DİL DESTEĞİ VE ÇİFT DİLLİ MESLEK LİSTELERİ
-dil_secimi = st.toggle("English / Türkçe", value=False)
+dil_secimi = st.toggle("English / Türkçe (Englısh seçildiğinde İngilizce CV yüklemek zorundasınız!)", value=False)
 
 # Türkçe Meslek Listesi (65 Pozisyon)
 MESLEKLER_TR = [
