@@ -1,139 +1,164 @@
 import streamlit as st
 import json
 import os
-import re
-import time
 import pandas as pd
 from openai import OpenAI
 from pypdf import PdfReader
 from dotenv import load_dotenv
+from datetime import datetime, timedelta
 
 load_dotenv()
 
-st.set_page_config(page_title="Advanced CV Analysis Panel", layout="wide")
+# ==========================================
+# 1. PAGE SETTINGS
+# ==========================================
+st.set_page_config(
+    page_title="Advanced CV Analysis Panel",
+    layout="wide"
+)
 
+# SQLite Veritabanı Bağlantısı ve Tablo Kurulumu
+conn = st.connection("sqlite", type="sql")
+with conn.session as session:
+    session.execute("""
+        CREATE TABLE IF NOT EXISTS users_tokens (
+            email TEXT,
+            token TEXT PRIMARY KEY,
+            plan TEXT,
+            expiry_date TEXT
+        )
+    """)
+    session.commit()
+
+def check_and_activate_token(input_token):
+    """
+    Tokenı kontrol eder. İlk kez giriliyorsa 30 günlük süreyi o an başlatır.
+    Daha önce girilmişse sürenin dolup dolmadığına tam saatlik bakar.
+    """
+    with conn.session as session:
+        result = session.execute(
+            "SELECT expiry_date FROM users_tokens WHERE token = :token",
+            {"token": input_token}
+        ).fetchone()
+        
+        if result:
+            expiry_date_str = result[0]
+            now = datetime.now()
+            
+            # DURUM 1: Token veritabanında var ama expiry_date boş (Kullanıcı ilk kez giriş yapıyor)
+            if expiry_date_str is None or expiry_date_str == "":
+                # Şu anki zamana tam 30 gün ekliyoruz (Tam saat ve dakikasıyla)
+                future_date = now + timedelta(days=30)
+                future_date_str = future_date.isoformat()
+                
+                # Veritabanında bu tokenın aktifleştiği bitiş tarihini güncelliyoruz
+                session.execute(
+                    "UPDATE users_tokens SET expiry_date = :expiry_date WHERE token = :token",
+                    {"expiry_date": future_date_str, "token": input_token}
+                )
+                session.commit()
+                return True, "Activated"
+            
+            # DURUM 2: Token daha önce aktifleştirilmiş, süre kontrolü yapılıyor
+            else:
+                expiry_date = datetime.fromisoformat(expiry_date_str)
+                if now <= expiry_date:
+                    return True, "Valid"
+                else:
+                    return False, "Expired"
+                    
+        return False, "Invalid"
+
+# Session State Kimlik Doğrulama Kontrolü
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
+
+# ==========================================
+# GİRİŞ EKRANI (ÖDEME DUVARI)
+# ==========================================
+if not st.session_state.authenticated:
+    st.title("Advanced CV Analysis Panel")
+    st.subheader("Devam Etmek İçin Erişim Kodunuzu Girin")
+    
+    user_token = st.text_input("Lütfen e-posta adresinize gönderilen Token anahtarını girin:", type="password")
+    
+    if st.button("Uygulamaya Giriş Yap"):
+        if user_token:
+            is_valid, status = check_and_activate_token(user_token)
+            if is_valid:
+                st.session_state.authenticated = True
+                if status == "Activated":
+                    st.success("Tokenınız ilk kez aktifleştirildi! 30 günlük süreniz şu andan itibaren başladı.")
+                else:
+                    st.success("Giriş başarılı!")
+                st.rerun()
+            elif status == "Expired":
+                st.error("Bu tokenın 1 aylık kullanım süresi dolmuştur. Lütfen planınızı yenileyin.")
+            else:
+                st.error("Geçersiz veya hatalı bir token girdiniz. Lütfen tekrar deneyin.")
+        else:
+            st.warning("Lütfen bir token alanı doldurun.")
+            
+    st.write("---")
+    st.info("Aktif bir erişim kodunuz yoksa Starter veya Pro planlarımızdan birini satın alarak anında kod edinebilirsiniz.")
+    st.stop()
+
+# ==========================================
+# ANA UYGULAMA (KODUNUN ORİJİNAL KISMI)
+# ==========================================
 POSITIONS = [
     # --- IT, Software and Technology ---
     "Backend Developer", "Frontend Developer", "Full Stack Developer", "Mobile Application Developer",
     "DevOps Engineer", "Data Scientist", "Data Analyst", "Data Engineer",
     "QA / Software Test Engineer", "Cyber Security Specialist", "Cloud Engineer",
     "Embedded Systems Developer", "Game Developer", "Database Administrator (DBA)",
-    "System Administrator", "IT Support Specialist", "Machine Learning Engineer",
-    "AI / Prompt Engineer", "Blockchain Developer", "Network Engineer",
-    "IT Project Manager", "Solutions Architect", "Site Reliability Engineer (SRE)",
-    "Technical Writer", "IT Security Analyst",
+    "System Administrator", "IT Support Specialist",
 
     # --- Product, Project and Management ---
     "Project Manager", "Product Manager", "Scrum Master / Agile Coach",
     "Business Analyst", "Team Lead / Technical Lead", "CTO (Chief Technology Officer)",
-    "Program Manager", "Portfolio Manager", "Change Management Specialist",
 
     # --- Design and Creative ---
     "UI/UX Designer", "Graphic Designer", "Video Editor / Motion Designer", "Art Director",
-    "3D Artist / Modeler", "Product Designer", "Brand Identity Designer",
-    "Illustrator", "UX Researcher", "Creative Director",
+    "3D Artist / Modeler",
 
     # --- Marketing, E-Commerce and Growth ---
     "Marketing Specialist", "Digital Marketing Specialist", "E-commerce Specialist",
     "SEO Specialist", "Growth Hacker", "Content Creator",
-    "Social Media Manager", "Brand Manager", "Performance Marketing Specialist",
-    "Email Marketing Specialist", "Affiliate Marketing Manager", "PR & Communications Specialist",
-    "Market Research Analyst", "Event Planner / Event Manager",
+    "Social Media Manager", "Brand Manager",
 
     # --- Sales and Customer Relations ---
     "Sales Representative", "Account Manager",
-    "Business Development Specialist", "Customer Success Specialist",
-    "Call Center / Customer Representative", "Inside Sales Representative",
-    "Key Account Manager", "Pre-Sales Engineer / Solutions Consultant",
-    "Sales Manager", "Channel Sales Manager",
+    "Business Development Specialist", "Customer Success Specialist", "Call Center / Customer Representative",
 
     # --- Human Resources and Administration ---
     "HR Specialist", "Talent Acquisition Specialist",
-    "HR Business Partner (HRBP)", "Office Manager / Executive Assistant",
-    "Administrative Affairs Specialist", "HR Manager", "HR Generalist",
-    "Compensation & Benefits Specialist", "Learning & Development (L&D) Specialist",
-    "Employee Relations Specialist", "DEI (Diversity & Inclusion) Specialist",
-    "Employer Branding Specialist", "Payroll Specialist",
+    "HR Business Partner (HRBP)", "Office Manager / Executive Assistant", "Administrative Affairs Specialist",
 
     # --- Finance, Accounting and Legal ---
-    "Accountant", "Certified Public Accountant (CPA)", "Financial Analyst",
-    "Budgeting and Reporting Specialist", "Legal Counsel / Lawyer", "Internal Auditor",
-    "Risk Manager", "Compliance Officer", "Tax Specialist",
-    "Treasury Analyst", "CFO (Chief Financial Officer)",
-    "Investment Analyst", "Credit Analyst", "Paralegal / Legal Assistant",
-    "Insurance Specialist / Underwriter",
-
-    # --- Engineering (Non-IT) ---
-    "Civil Engineer", "Mechanical Engineer", "Electrical Engineer",
-    "Structural Engineer", "Chemical Engineer", "Environmental Engineer",
-    "Industrial Engineer", "Aerospace Engineer", "Biomedical Engineer",
-    "Geotechnical Engineer", "Process Engineer", "Facilities Engineer",
-    "Health & Safety Engineer / HSE Specialist", "Automation / Robotics Engineer",
-    "Renewable Energy Engineer", "Telecommunications Engineer",
-
-    # --- Architecture, Construction and Real Estate ---
-    "Architect", "Landscape Architect", "Interior Designer",
-    "Construction Project Manager", "Site Engineer / Construction Engineer",
-    "Building Inspector / Quality Control Engineer",
-    "Real Estate Agent / Property Consultant", "Property Manager",
-    "Urban Planner", "BIM Specialist", "Cost Estimator / Quantity Surveyor",
-
-    # --- Healthcare and Medical ---
-    "General Practitioner / Medical Doctor", "Surgeon",
-    "Registered Nurse", "Pharmacist", "Dentist",
-    "Physical Therapist / Physiotherapist", "Occupational Therapist",
-    "Radiologist / Radiology Technician", "Medical Laboratory Technician",
-    "Paramedic / Emergency Medical Technician (EMT)",
-    "Healthcare Administrator / Hospital Manager",
-    "Optometrist", "Nutritionist / Dietitian",
+    "Accountant", "Certified Public Accountant (CPA)", "Financial Analyst", "Budgeting and Reporting Specialist",
+    "Legal Counsel / Lawyer", "Internal Auditor",
 
     # --- Health, Education and Social Sciences ---
-    "Psychologist", "Clinical Psychologist", "Corporate HR Psychologist",
+    "Psychologist", "Clinical Psychologist", "Dietitian / Nutritionist", "Corporate HR Psychologist",
     "Special Education Teacher", "Corporate Trainer",
-    "Primary / Secondary School Teacher", "University Lecturer / Academic",
-    "Curriculum Developer / Instructional Designer",
-    "School Counselor / Guidance Counselor", "Social Worker",
-    "Speech-Language Therapist",
-
-    # --- Media, Communications and Journalism ---
-    "Journalist / Reporter", "Copywriter / Content Writer",
-    "Editor / Chief Editor", "Podcast Producer",
-    "Public Relations (PR) Manager", "Communications Manager",
-    "Translator / Interpreter", "Photographer", "Broadcast Producer",
-
-    # --- Hospitality, Tourism and Food & Beverage ---
-    "Hotel Manager", "Restaurant Manager", "Front Office Manager",
-    "Food & Beverage Manager", "Chef / Head Chef",
-    "Event Coordinator / Hospitality Coordinator",
-    "Tourism Specialist / Travel Agent",
-    "Concierge", "Revenue Manager (Hospitality)",
 
     # --- Operations, Logistics and Manufacturing ---
-    "Operations Manager", "Logistics and Supply Chain Specialist",
-    "Procurement Specialist", "Production / Factory Engineer",
-    "Quality Assurance Engineer (Manufacturing)", "Warehouse / Inventory Specialist",
-    "Import / Export Specialist", "Fleet Manager",
-    "Manufacturing Plant Manager", "ERP / SAP Specialist",
-
-    # --- Science, Research and Environment ---
-    "Research Scientist", "Data Research Analyst",
-    "Environmental Consultant", "Chemist / Laboratory Scientist",
-    "Biotechnologist", "Geologist / Geoscientist",
-    "Agricultural Engineer / Agronomist",
-
-    # --- Executive and C-Suite ---
-    "CEO (Chief Executive Officer)", "COO (Chief Operating Officer)",
-    "CMO (Chief Marketing Officer)", "CHRO (Chief Human Resources Officer)",
-    "General Manager", "Managing Director",
+    "Operations Manager", "Logistics and Supply Chain Specialist", "Procurement Specialist",
+    "Production / Factory Engineer", "Quality Assurance Engineer (Manufacturing)", "Warehouse / Inventory Specialist"
 ]
 
-CV_CHAR_LIMIT = 12000
+if st.sidebar.button("Güvenli Çıkış"):
+    st.session_state.authenticated = False
+    st.rerun()
 
 st.title("Scoring System")
+
 selected_position = st.selectbox("Select Target Position:", options=POSITIONS)
 st.markdown("Upload candidate **PDF** resumes; the system will analyze them based on the selected role.")
 st.write("---")
 
+# API Key
 groq_key = os.getenv("GROQ_API_KEY", "") or st.secrets.get("GROQ_API_KEY", "")
 MODEL_NAME = "llama-3.3-70b-versatile"
 
@@ -144,114 +169,66 @@ if "analiz_sonuclari" not in st.session_state:
 def extract_pdf_text(pdf_file):
     try:
         reader = PdfReader(pdf_file)
-        pages_text = []
-        for page in reader.pages:
-            t = page.extract_text()
-            if t:
-                pages_text.append(t)
-        return "\n".join(pages_text).strip()
-    except Exception:
+        return "\n".join([page.extract_text() for page in reader.pages if page.extract_text()]).strip()
+    except:
         return None
 
 
-def truncate_cv(text, char_limit=CV_CHAR_LIMIT):
-    if len(text) > char_limit:
-        return text[:char_limit] + "\n\n[...CV truncated for length...]"
-    return text
-
-
-def extract_json(raw: str) -> dict:
-    cleaned = re.sub(r"```(?:json)?", "", raw).strip().rstrip("```").strip()
-    match = re.search(r"\{.*\}", cleaned, re.DOTALL)
-    if match:
-        return json.loads(match.group())
-    raise ValueError(f"No JSON object found in response: {raw[:300]}")
-
-
-def parse_retry_seconds(error_message: str) -> int:
-    """Extract wait time in seconds from a Groq 429 rate-limit error message."""
-    match = re.search(r"try again in\s+([\d]+m)?([\d.]+s)?", str(error_message))
-    if match:
-        minutes = int(match.group(1).replace("m", "")) if match.group(1) else 0
-        seconds = float(match.group(2).replace("s", "")) if match.group(2) else 0
-        return int(minutes * 60 + seconds) + 2  # +2s buffer
-    return 60  # default fallback
-
-
-def analyze_cv(cv_text, api_key, target_position, status_placeholder=None, max_retries=3):
+# ==========================================
+# 2. AI ANALYSIS (ENGLISH ONLY)
+# ==========================================
+def analyze_cv(cv_text, api_key, target_position):
     client = OpenAI(base_url="https://api.groq.com/openai/v1", api_key=api_key)
-    cv_text = truncate_cv(cv_text)
 
-    prompt = f"""You are an expert HR evaluator. Evaluate the CV below for the position: "{target_position}".
+    prompt = f"""
+    You will evaluate the CV below for the position of **"{target_position}"**.
 
-INSTRUCTIONS:
-- If the candidate's background is completely unrelated to "{target_position}", assign a score below 40.
-- Assign an integer score from 0 to 100.
-- If score >= 60, set rejection_reason to null.
-- If score < 60, explain the rejection reason briefly.
-- Write a professional competency analysis covering technical skills and soft skills.
-- All text MUST be in English only.
+    [CRITICAL RULES]:
+    1. If the candidate's background and competencies are completely unrelated to **"{target_position}"**, give them a score below 40 and state the position mismatch in "rejection_reason".
+    2. Assign a score out of 100 in the "score" field.
+    3. If the score is 60 or above, leave "rejection_reason" null. If below 60, explain the reason.
+    4. In "detailed_analysis_report": professionally analyze the candidate's suitability for this specific position ({target_position}) in terms of both technical skills and soft skills.
+    5. Write ALL text (report and rejection reason) strictly in **English**.
 
-You MUST respond with ONLY a valid JSON object. No explanation, no markdown, no code fences. Just raw JSON.
+    Respond ONLY with valid JSON in this exact format:
+    {{
+      "score": <integer>,
+      "rejection_reason": <string or null>,
+      "detailed_analysis_report": "<analysis text>"
+    }}
 
-Required format:
-{{"score": <integer>, "rejection_reason": <string or null>, "detailed_analysis_report": "<analysis>"}}
+    CV Text:
+    {cv_text}
+    """
 
-CV:
-{cv_text}"""
+    try:
+        response = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1
+        )
+        raw = response.choices[0].message.content.strip()
+        data = json.loads(raw)
 
-    for attempt in range(1, max_retries + 1):
-        try:
-            response = client.chat.completions.create(
-                model=MODEL_NAME,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.1,
-                max_tokens=1500,
-            )
-            raw = response.choices[0].message.content.strip()
-            data = extract_json(raw)
-
-            score = int(data.get("score", 0))
-            if score >= 60:
-                data["rejection_reason"] = "—"
-                data["status"] = "Passed"
-            else:
-                data["status"] = "Rejected"
-                if not data.get("rejection_reason"):
-                    data["rejection_reason"] = "Role mismatch or low score."
-            data["score"] = score
-            return data, None
-
-        except Exception as e:
-            err_str = str(e)
-            # Rate limit (429) — wait and retry
-            if "429" in err_str or "rate_limit_exceeded" in err_str:
-                wait_sec = parse_retry_seconds(err_str)
-                if attempt < max_retries:
-                    for remaining in range(wait_sec, 0, -1):
-                        if status_placeholder:
-                            status_placeholder.warning(
-                                f"**Groq daily token limit reached.** "
-                                f"Waiting **{remaining}s** before retrying "
-                                f"(attempt {attempt}/{max_retries})..."
-                            )
-                        time.sleep(1)
-                    continue  # retry
-                else:
-                    return None, (
-                        f"Groq daily token limit (100K tokens/day) reached and all "
-                        f"{max_retries} retries exhausted. "
-                        f"Please wait until midnight UTC or upgrade your Groq plan at "
-                        f"https://console.groq.com/settings/billing"
-                    )
-            # Any other error — don't retry
-            return None, err_str
-
-    return None, "Max retries reached without success."
+        if int(data["score"]) >= 60:
+            data["rejection_reason"] = "—"
+            data["status"] = "Passed"
+        else:
+            data["status"] = "Rejected"
+            if not data.get("rejection_reason"):
+                data["rejection_reason"] = "Role mismatch or low score."
+        return data
+    except:
+        return {
+            "score": 0,
+            "status": "⚠️ Error",
+            "rejection_reason": "Processing error.",
+            "detailed_analysis_report": "An error occurred during analysis."
+        }
 
 
 # ==========================================
-# UI AND ANALYSIS
+# 3. UI AND ANALYSIS
 # ==========================================
 if not groq_key:
     st.error("API Key is not defined.")
@@ -261,50 +238,33 @@ else:
     if uploaded_files and st.button("Start Analysis"):
         results = []
         progress = st.progress(0)
-        status_placeholder = st.empty()
 
         for i, file in enumerate(uploaded_files):
-            status_placeholder.info(f"Analyzing {i+1}/{len(uploaded_files)}: **{file.name}**")
             text = extract_pdf_text(file)
-
-            if not text:
-                results.append({
-                    "File Name": file.name, "Score": 0, "Status": "Error",
-                    "Rejection Reason": "Could not extract text from PDF.",
-                    "report": "PDF could not be read. It may be scanned/image-based."
-                })
+            if text:
+                result = analyze_cv(text, groq_key, selected_position)
             else:
-                result, error = analyze_cv(text, groq_key, selected_position, status_placeholder)
-                if result:
-                    results.append({
-                        "File Name": file.name, "Score": result["score"],
-                        "Status": result["status"],
-                        "Rejection Reason": result.get("rejection_reason", "—"),
-                        "report": result.get("detailed_analysis_report", "")
-                    })
-                else:
-                    is_rate_limit = error and ("token limit" in error or "429" in error)
-                    results.append({
-                        "File Name": file.name, "Score": 0,
-                        "Status": "Rate Limited" if is_rate_limit else " Error",
-                        "Rejection Reason": "Groq daily token limit reached." if is_rate_limit else "AI response parse error.",
-                        "report": error or "Unknown error."
-                    })
+                result = {
+                    "score": 0,
+                    "status": "⚠️ Error",
+                    "rejection_reason": "Could not read file.",
+                    "detailed_analysis_report": ""
+                }
 
+            results.append({
+                "File Name": file.name,
+                "Score": result["score"],
+                "Status": result["status"],
+                "Rejection Reason": result["rejection_reason"],
+                "report": result["detailed_analysis_report"]
+            })
             progress.progress((i + 1) / len(uploaded_files))
 
-        status_placeholder.empty()
         st.session_state.analiz_sonuclari = pd.DataFrame(results)
         st.success("All CVs analyzed based on the selected role!")
 
     if st.session_state.analiz_sonuclari is not None:
         df = st.session_state.analiz_sonuclari
-
-        errors = df[df["Status"].isin(["Error", "Rate Limited"])]
-        if not errors.empty:
-            with st.expander(f"{len(errors)} file(s) had errors — click to see details"):
-                for _, row in errors.iterrows():
-                    st.markdown(f"**{row['File Name']}**: {row['report']}")
 
         st.subheader(f"General Evaluation Table ({selected_position})")
         st.dataframe(df.drop(columns=["report"]), use_container_width=True)
