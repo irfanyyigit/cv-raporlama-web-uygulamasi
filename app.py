@@ -231,7 +231,7 @@ CV:
                     for remaining in range(wait_sec, 0, -1):
                         if status_placeholder:
                             status_placeholder.warning(
-                                f"⏳ **Groq daily token limit reached.** "
+                                f"**Groq daily token limit reached.** "
                                 f"Waiting **{remaining}s** before retrying "
                                 f"(attempt {attempt}/{max_retries})..."
                             )
@@ -239,7 +239,7 @@ CV:
                     continue  # retry
                 else:
                     return None, (
-                        f"🚫 Groq daily token limit (100K tokens/day) reached and all "
+                        f"Groq daily token limit (100K tokens/day) reached and all "
                         f"{max_retries} retries exhausted. "
                         f"Please wait until midnight UTC or upgrade your Groq plan at "
                         f"https://console.groq.com/settings/billing"
@@ -269,7 +269,7 @@ else:
 
             if not text:
                 results.append({
-                    "File Name": file.name, "Score": 0, "Status": "⚠️ Error",
+                    "File Name": file.name, "Score": 0, "Status": "Error",
                     "Rejection Reason": "Could not extract text from PDF.",
                     "report": "PDF could not be read. It may be scanned/image-based."
                 })
@@ -286,7 +286,7 @@ else:
                     is_rate_limit = error and ("token limit" in error or "429" in error)
                     results.append({
                         "File Name": file.name, "Score": 0,
-                        "Status": "⏳ Rate Limited" if is_rate_limit else "⚠️ Error",
+                        "Status": "Rate Limited" if is_rate_limit else " Error",
                         "Rejection Reason": "Groq daily token limit reached." if is_rate_limit else "AI response parse error.",
                         "report": error or "Unknown error."
                     })
@@ -300,9 +300,9 @@ else:
     if st.session_state.analiz_sonuclari is not None:
         df = st.session_state.analiz_sonuclari
 
-        errors = df[df["Status"].isin(["⚠️ Error", "⏳ Rate Limited"])]
+        errors = df[df["Status"].isin(["Error", "Rate Limited"])]
         if not errors.empty:
-            with st.expander(f"⚠️ {len(errors)} file(s) had errors — click to see details"):
+            with st.expander(f"{len(errors)} file(s) had errors — click to see details"):
                 for _, row in errors.iterrows():
                     st.markdown(f"**{row['File Name']}**: {row['report']}")
 
