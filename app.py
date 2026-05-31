@@ -2,6 +2,7 @@ import streamlit as st
 import json
 import os
 import re
+import time
 import pandas as pd
 from openai import OpenAI
 from pypdf import PdfReader
@@ -167,7 +168,17 @@ def extract_json(raw: str) -> dict:
     raise ValueError(f"No JSON object found in response: {raw[:300]}")
 
 
-def analyze_cv(cv_text, api_key, target_position):
+def parse_retry_seconds(error_message: str) -> int:
+    """Extract wait time in seconds from a Groq 429 rate-limit error message."""
+    match = re.search(r"try again in\s+([\d]+m)?([\d.]+s)?", str(error_message))
+    if match:
+        minutes = int(match.group(1).replace("m", "")) if match.group(1) else 0
+        seconds = float(match.group(2).replace("s", "")) if match.group(2) else 0
+        return int(minutes * 60 + seconds) + 2  # +2s buffer
+    return 60  # default fallback
+
+
+def analyze_cv(cv_text, api_key, target_position, status_placeholder=None, max_retries=3):
     client = OpenAI(base_url="https://api.groq.com/openai/v1", api_key=api_key)
     cv_text = truncate_cv(cv_text)
 
@@ -189,29 +200,54 @@ Required format:
 CV:
 {cv_text}"""
 
-    try:
-        response = client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.1,
-            max_tokens=1500,
-        )
-        raw = response.choices[0].message.content.strip()
-        data = extract_json(raw)
+    for attempt in range(1, max_retries + 1):
+        try:
+            response = client.chat.completions.create(
+                model=MODEL_NAME,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.1,
+                max_tokens=1500,
+            )
+            raw = response.choices[0].message.content.strip()
+            data = extract_json(raw)
 
-        score = int(data.get("score", 0))
-        if score >= 60:
-            data["rejection_reason"] = "—"
-            data["status"] = "Passed"
-        else:
-            data["status"] = "Rejected"
-            if not data.get("rejection_reason"):
-                data["rejection_reason"] = "Role mismatch or low score."
-        data["score"] = score
-        return data, None
+            score = int(data.get("score", 0))
+            if score >= 60:
+                data["rejection_reason"] = "—"
+                data["status"] = "Passed"
+            else:
+                data["status"] = "Rejected"
+                if not data.get("rejection_reason"):
+                    data["rejection_reason"] = "Role mismatch or low score."
+            data["score"] = score
+            return data, None
 
-    except Exception as e:
-        return None, str(e)
+        except Exception as e:
+            err_str = str(e)
+            # Rate limit (429) — wait and retry
+            if "429" in err_str or "rate_limit_exceeded" in err_str:
+                wait_sec = parse_retry_seconds(err_str)
+                if attempt < max_retries:
+                    for remaining in range(wait_sec, 0, -1):
+                        if status_placeholder:
+                            status_placeholder.warning(
+                                f"⏳ **Groq daily token limit reached.** "
+                                f"Waiting **{remaining}s** before retrying "
+                                f"(attempt {attempt}/{max_retries})..."
+                            )
+                        time.sleep(1)
+                    continue  # retry
+                else:
+                    return None, (
+                        f"🚫 Groq daily token limit (100K tokens/day) reached and all "
+                        f"{max_retries} retries exhausted. "
+                        f"Please wait until midnight UTC or upgrade your Groq plan at "
+                        f"https://console.groq.com/settings/billing"
+                    )
+            # Any other error — don't retry
+            return None, err_str
+
+    return None, "Max retries reached without success."
 
 
 # ==========================================
@@ -238,7 +274,7 @@ else:
                     "report": "PDF could not be read. It may be scanned/image-based."
                 })
             else:
-                result, error = analyze_cv(text, groq_key, selected_position)
+                result, error = analyze_cv(text, groq_key, selected_position, status_placeholder)
                 if result:
                     results.append({
                         "File Name": file.name, "Score": result["score"],
@@ -247,10 +283,12 @@ else:
                         "report": result.get("detailed_analysis_report", "")
                     })
                 else:
+                    is_rate_limit = error and ("token limit" in error or "429" in error)
                     results.append({
-                        "File Name": file.name, "Score": 0, "Status": "⚠️ Error",
-                        "Rejection Reason": "AI response parse error.",
-                        "report": f"Debug info: {error}"
+                        "File Name": file.name, "Score": 0,
+                        "Status": "⏳ Rate Limited" if is_rate_limit else "⚠️ Error",
+                        "Rejection Reason": "Groq daily token limit reached." if is_rate_limit else "AI response parse error.",
+                        "report": error or "Unknown error."
                     })
 
             progress.progress((i + 1) / len(uploaded_files))
@@ -262,7 +300,7 @@ else:
     if st.session_state.analiz_sonuclari is not None:
         df = st.session_state.analiz_sonuclari
 
-        errors = df[df["Status"] == "⚠️ Error"]
+        errors = df[df["Status"].isin(["⚠️ Error", "⏳ Rate Limited"])]
         if not errors.empty:
             with st.expander(f"⚠️ {len(errors)} file(s) had errors — click to see details"):
                 for _, row in errors.iterrows():
