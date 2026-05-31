@@ -12,31 +12,120 @@ load_dotenv()
 st.set_page_config(page_title="Advanced CV Analysis Panel", layout="wide")
 
 POSITIONS = [
+    # --- IT, Software and Technology ---
     "Backend Developer", "Frontend Developer", "Full Stack Developer", "Mobile Application Developer",
     "DevOps Engineer", "Data Scientist", "Data Analyst", "Data Engineer",
     "QA / Software Test Engineer", "Cyber Security Specialist", "Cloud Engineer",
     "Embedded Systems Developer", "Game Developer", "Database Administrator (DBA)",
-    "System Administrator", "IT Support Specialist",
+    "System Administrator", "IT Support Specialist", "Machine Learning Engineer",
+    "AI / Prompt Engineer", "Blockchain Developer", "Network Engineer",
+    "IT Project Manager", "Solutions Architect", "Site Reliability Engineer (SRE)",
+    "Technical Writer", "IT Security Analyst",
+
+    # --- Product, Project and Management ---
     "Project Manager", "Product Manager", "Scrum Master / Agile Coach",
     "Business Analyst", "Team Lead / Technical Lead", "CTO (Chief Technology Officer)",
+    "Program Manager", "Portfolio Manager", "Change Management Specialist",
+
+    # --- Design and Creative ---
     "UI/UX Designer", "Graphic Designer", "Video Editor / Motion Designer", "Art Director",
-    "3D Artist / Modeler",
+    "3D Artist / Modeler", "Product Designer", "Brand Identity Designer",
+    "Illustrator", "UX Researcher", "Creative Director",
+
+    # --- Marketing, E-Commerce and Growth ---
     "Marketing Specialist", "Digital Marketing Specialist", "E-commerce Specialist",
     "SEO Specialist", "Growth Hacker", "Content Creator",
-    "Social Media Manager", "Brand Manager",
+    "Social Media Manager", "Brand Manager", "Performance Marketing Specialist",
+    "Email Marketing Specialist", "Affiliate Marketing Manager", "PR & Communications Specialist",
+    "Market Research Analyst", "Event Planner / Event Manager",
+
+    # --- Sales and Customer Relations ---
     "Sales Representative", "Account Manager",
-    "Business Development Specialist", "Customer Success Specialist", "Call Center / Customer Representative",
+    "Business Development Specialist", "Customer Success Specialist",
+    "Call Center / Customer Representative", "Inside Sales Representative",
+    "Key Account Manager", "Pre-Sales Engineer / Solutions Consultant",
+    "Sales Manager", "Channel Sales Manager",
+
+    # --- Human Resources and Administration ---
     "HR Specialist", "Talent Acquisition Specialist",
-    "HR Business Partner (HRBP)", "Office Manager / Executive Assistant", "Administrative Affairs Specialist",
-    "Accountant", "Certified Public Accountant (CPA)", "Financial Analyst", "Budgeting and Reporting Specialist",
-    "Legal Counsel / Lawyer", "Internal Auditor",
-    "Psychologist", "Clinical Psychologist", "Dietitian / Nutritionist", "Corporate HR Psychologist",
+    "HR Business Partner (HRBP)", "Office Manager / Executive Assistant",
+    "Administrative Affairs Specialist", "HR Manager", "HR Generalist",
+    "Compensation & Benefits Specialist", "Learning & Development (L&D) Specialist",
+    "Employee Relations Specialist", "DEI (Diversity & Inclusion) Specialist",
+    "Employer Branding Specialist", "Payroll Specialist",
+
+    # --- Finance, Accounting and Legal ---
+    "Accountant", "Certified Public Accountant (CPA)", "Financial Analyst",
+    "Budgeting and Reporting Specialist", "Legal Counsel / Lawyer", "Internal Auditor",
+    "Risk Manager", "Compliance Officer", "Tax Specialist",
+    "Treasury Analyst", "CFO (Chief Financial Officer)",
+    "Investment Analyst", "Credit Analyst", "Paralegal / Legal Assistant",
+    "Insurance Specialist / Underwriter",
+
+    # --- Engineering (Non-IT) ---
+    "Civil Engineer", "Mechanical Engineer", "Electrical Engineer",
+    "Structural Engineer", "Chemical Engineer", "Environmental Engineer",
+    "Industrial Engineer", "Aerospace Engineer", "Biomedical Engineer",
+    "Geotechnical Engineer", "Process Engineer", "Facilities Engineer",
+    "Health & Safety Engineer / HSE Specialist", "Automation / Robotics Engineer",
+    "Renewable Energy Engineer", "Telecommunications Engineer",
+
+    # --- Architecture, Construction and Real Estate ---
+    "Architect", "Landscape Architect", "Interior Designer",
+    "Construction Project Manager", "Site Engineer / Construction Engineer",
+    "Building Inspector / Quality Control Engineer",
+    "Real Estate Agent / Property Consultant", "Property Manager",
+    "Urban Planner", "BIM Specialist", "Cost Estimator / Quantity Surveyor",
+
+    # --- Healthcare and Medical ---
+    "General Practitioner / Medical Doctor", "Surgeon",
+    "Registered Nurse", "Pharmacist", "Dentist",
+    "Physical Therapist / Physiotherapist", "Occupational Therapist",
+    "Radiologist / Radiology Technician", "Medical Laboratory Technician",
+    "Paramedic / Emergency Medical Technician (EMT)",
+    "Healthcare Administrator / Hospital Manager",
+    "Optometrist", "Nutritionist / Dietitian",
+
+    # --- Health, Education and Social Sciences ---
+    "Psychologist", "Clinical Psychologist", "Corporate HR Psychologist",
     "Special Education Teacher", "Corporate Trainer",
-    "Operations Manager", "Logistics and Supply Chain Specialist", "Procurement Specialist",
-    "Production / Factory Engineer", "Quality Assurance Engineer (Manufacturing)", "Warehouse / Inventory Specialist"
+    "Primary / Secondary School Teacher", "University Lecturer / Academic",
+    "Curriculum Developer / Instructional Designer",
+    "School Counselor / Guidance Counselor", "Social Worker",
+    "Speech-Language Therapist",
+
+    # --- Media, Communications and Journalism ---
+    "Journalist / Reporter", "Copywriter / Content Writer",
+    "Editor / Chief Editor", "Podcast Producer",
+    "Public Relations (PR) Manager", "Communications Manager",
+    "Translator / Interpreter", "Photographer", "Broadcast Producer",
+
+    # --- Hospitality, Tourism and Food & Beverage ---
+    "Hotel Manager", "Restaurant Manager", "Front Office Manager",
+    "Food & Beverage Manager", "Chef / Head Chef",
+    "Event Coordinator / Hospitality Coordinator",
+    "Tourism Specialist / Travel Agent",
+    "Concierge", "Revenue Manager (Hospitality)",
+
+    # --- Operations, Logistics and Manufacturing ---
+    "Operations Manager", "Logistics and Supply Chain Specialist",
+    "Procurement Specialist", "Production / Factory Engineer",
+    "Quality Assurance Engineer (Manufacturing)", "Warehouse / Inventory Specialist",
+    "Import / Export Specialist", "Fleet Manager",
+    "Manufacturing Plant Manager", "ERP / SAP Specialist",
+
+    # --- Science, Research and Environment ---
+    "Research Scientist", "Data Research Analyst",
+    "Environmental Consultant", "Chemist / Laboratory Scientist",
+    "Biotechnologist", "Geologist / Geoscientist",
+    "Agricultural Engineer / Agronomist",
+
+    # --- Executive and C-Suite ---
+    "CEO (Chief Executive Officer)", "COO (Chief Operating Officer)",
+    "CMO (Chief Marketing Officer)", "CHRO (Chief Human Resources Officer)",
+    "General Manager", "Managing Director",
 ]
 
-# CV text limit: ~6000 words to stay well within token limits
 CV_CHAR_LIMIT = 12000
 
 st.title("Scoring System")
@@ -60,22 +149,18 @@ def extract_pdf_text(pdf_file):
             if t:
                 pages_text.append(t)
         return "\n".join(pages_text).strip()
-    except Exception as e:
+    except Exception:
         return None
 
 
 def truncate_cv(text, char_limit=CV_CHAR_LIMIT):
-    """Truncate very long CVs to avoid token limit errors."""
     if len(text) > char_limit:
         return text[:char_limit] + "\n\n[...CV truncated for length...]"
     return text
 
 
 def extract_json(raw: str) -> dict:
-    """Robustly extract JSON from model output even if wrapped in markdown fences."""
-    # Strip markdown code fences if present
     cleaned = re.sub(r"```(?:json)?", "", raw).strip().rstrip("```").strip()
-    # Find the first { ... } block
     match = re.search(r"\{.*\}", cleaned, re.DOTALL)
     if match:
         return json.loads(match.group())
@@ -84,7 +169,6 @@ def extract_json(raw: str) -> dict:
 
 def analyze_cv(cv_text, api_key, target_position):
     client = OpenAI(base_url="https://api.groq.com/openai/v1", api_key=api_key)
-
     cv_text = truncate_cv(cv_text)
 
     prompt = f"""You are an expert HR evaluator. Evaluate the CV below for the position: "{target_position}".
@@ -124,7 +208,7 @@ CV:
             if not data.get("rejection_reason"):
                 data["rejection_reason"] = "Role mismatch or low score."
         data["score"] = score
-        return data, None  # (result, error_detail)
+        return data, None
 
     except Exception as e:
         return None, str(e)
@@ -149,9 +233,7 @@ else:
 
             if not text:
                 results.append({
-                    "File Name": file.name,
-                    "Score": 0,
-                    "Status": "⚠️ Error",
+                    "File Name": file.name, "Score": 0, "Status": "⚠️ Error",
                     "Rejection Reason": "Could not extract text from PDF.",
                     "report": "PDF could not be read. It may be scanned/image-based."
                 })
@@ -159,17 +241,14 @@ else:
                 result, error = analyze_cv(text, groq_key, selected_position)
                 if result:
                     results.append({
-                        "File Name": file.name,
-                        "Score": result["score"],
+                        "File Name": file.name, "Score": result["score"],
                         "Status": result["status"],
                         "Rejection Reason": result.get("rejection_reason", "—"),
                         "report": result.get("detailed_analysis_report", "")
                     })
                 else:
                     results.append({
-                        "File Name": file.name,
-                        "Score": 0,
-                        "Status": "⚠️ Error",
+                        "File Name": file.name, "Score": 0, "Status": "⚠️ Error",
                         "Rejection Reason": "AI response parse error.",
                         "report": f"Debug info: {error}"
                     })
@@ -183,7 +262,6 @@ else:
     if st.session_state.analiz_sonuclari is not None:
         df = st.session_state.analiz_sonuclari
 
-        # Show error details if any
         errors = df[df["Status"] == "⚠️ Error"]
         if not errors.empty:
             with st.expander(f"⚠️ {len(errors)} file(s) had errors — click to see details"):
