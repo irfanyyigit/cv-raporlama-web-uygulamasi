@@ -6,6 +6,7 @@ from openai import OpenAI
 from pypdf import PdfReader
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
+from st_supabase_connection import SupabaseConnection # Yeni kütüphane
 
 load_dotenv()
 
@@ -17,49 +18,37 @@ st.set_page_config(
     layout="wide"
 )
 
-# SQLite Veritabanı Bağlantısı ve Tablo Kurulumu
-conn = st.connection("sqlite", type="sql")
-with conn.session as session:
-    session.execute("""
-        CREATE TABLE IF NOT EXISTS users_tokens (
-            email TEXT,
-            token TEXT PRIMARY KEY,
-            plan TEXT,
-            expiry_date TEXT
-        )
-    """)
-    session.commit()
+# Canlı Supabase Bağlantısı
+conn = st.connection(
+    "supabase",
+    type=SupabaseConnection,
+    url="https://ngbfndehzmpzeiuzdlbo.supabase.co",
+    key="BURAYA_ANON_PUBLIC_KEY_GELECEK" # Kendi Anon Public Key'ini tırnak içine yapıştır
+)
 
 def check_and_activate_token(input_token):
     """
-    Tokenı kontrol eder. İlk kez giriliyorsa 30 günlük süreyi o an başlatır.
-    Daha önce girilmişse sürenin dolup dolmadığına tam saatlik bakar.
+    Supabase üzerinden token kontrolü yapar. İlk girişte 30 günlük süreyi başlatır.
     """
-    with conn.session as session:
-        result = session.execute(
-            "SELECT expiry_date FROM users_tokens WHERE token = :token",
-            {"token": input_token}
-        ).fetchone()
+    try:
+        # Veritabanından tokenı sorgula (Boşlukları temizleyerek)
+        response = conn.table("users_tokens").select("*").eq("token", input_token.strip()).execute()
         
-        if result:
-            expiry_date_str = result[0]
+        if response.data and len(response.data) > 0:
+            row = response.data[0]
+            expiry_date_str = row.get("expiry_date")
             now = datetime.now()
             
-            # DURUM 1: Token veritabanında var ama expiry_date boş (Kullanıcı ilk kez giriş yapıyor)
-            if expiry_date_str is None or expiry_date_str == "":
-                # Şu anki zamana tam 30 gün ekliyoruz (Tam saat ve dakikasıyla)
+            # DURUM 1: Token var ama expiry_date boş veya None (İlk kez giriş yapıyor)
+            if not expiry_date_str or expiry_date_str == "":
                 future_date = now + timedelta(days=30)
                 future_date_str = future_date.isoformat()
                 
-                # Veritabanında bu tokenın aktifleştiği bitiş tarihini güncelliyoruz
-                session.execute(
-                    "UPDATE users_tokens SET expiry_date = :expiry_date WHERE token = :token",
-                    {"expiry_date": future_date_str, "token": input_token}
-                )
-                session.commit()
+                # Supabase'de expiry_date alanını güncelle
+                conn.table("users_tokens").update({"expiry_date": future_date_str}).eq("token", input_token.strip()).execute()
                 return True, "Activated"
             
-            # DURUM 2: Token daha önce aktifleştirilmiş, süre kontrolü yapılıyor
+            # DURUM 2: Token daha önce aktifleştirilmiş, süre kontrolü
             else:
                 expiry_date = datetime.fromisoformat(expiry_date_str)
                 if now <= expiry_date:
@@ -68,6 +57,8 @@ def check_and_activate_token(input_token):
                     return False, "Expired"
                     
         return False, "Invalid"
+    except Exception as e:
+        return False, "Error"
 
 # Session State Kimlik Doğrulama Kontrolü
 if "authenticated" not in st.session_state:
@@ -102,7 +93,6 @@ if not st.session_state.authenticated:
     st.write("---")
     st.info("Aktif bir erişim kodunuz yoksa Starter veya Pro planlarımızdan birini satın alarak anında kod edinebilirsiniz.")
     st.stop()
-
 # ==========================================
 # ANA UYGULAMA (KODUNUN ORİJİNAL KISMI)
 # ==========================================
