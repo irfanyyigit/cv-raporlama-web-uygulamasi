@@ -3,3 +3,4 @@ openai
 pandas
 pypdf
 python-dotenv
+st-supabase-connection
