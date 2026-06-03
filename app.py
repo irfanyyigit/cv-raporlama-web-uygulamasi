@@ -23,7 +23,7 @@ conn = st.connection(
     "supabase",
     type=SupabaseConnection,
     url="https://ngbfndehzmpzeiuzdlbo.supabase.co",
-    key="BURAYA_ANON_PUBLIC_KEY_GELECEK" # Kendi Anon Public Key'ini tırnak içine yapıştır
+    key="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5nYmZuZGVoem1wemVpdXpkbGJvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyNDUwNjUsImV4cCI6MjA5NTgyMTA2NX0.csI00C996qvsT4QR7Kp4rsVtcYOfRbGhTlvi3A-UtfU" # Kendi Anon Public Key'ini tırnak içine yapıştır
 )
 
 def check_and_activate_token(input_token):
